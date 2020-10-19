@@ -54,6 +54,11 @@ impl Streak {
         }
     }
 
+    fn update_count<F: FnOnce(u32) -> u32>(&mut self, action: F) {
+        self.current_count = action(self.current_count);
+        self.max_count = self.max_count.max(self.current_count);
+    }
+
     /// Returns the new streak count if it updated
     fn hit(&mut self) -> Option<u32> {
         match self.state {
@@ -63,12 +68,12 @@ impl Streak {
             }
             StreakState::Expired | StreakState::New => {
                 self.state = StreakState::Done;
-                self.current_count = 1;
+                self.update_count(|_old_count| 1);
                 Some(self.current_count)
             }
             StreakState::Pending => {
                 self.state = StreakState::Done;
-                self.current_count += 1;
+                self.update_count(|old_count| old_count + 1);
                 Some(self.current_count)
             }
         }
@@ -123,12 +128,12 @@ impl State {
                 }
                 n if n > 1 => {
                     streak.state = StreakState::Expired;
-                    streak.current_count = 0;
+                    streak.update_count(|_old_count| 0);
                 }
                 _ => {
                     eprintln!("corrupted time state");
                     streak.state = StreakState::Pending;
-                    streak.current_count = 0;
+                    streak.update_count(|_old_count| 0);
                 }
             };
         }
