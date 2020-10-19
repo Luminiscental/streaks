@@ -198,17 +198,44 @@ impl State {
     }
 }
 
+fn write_table(f: &mut fmt::Formatter, table: Vec<[String; 4]>) -> fmt::Result {
+    let max_widths: Vec<_> = (0..4)
+        .map(|i| table.iter().map(|arr| arr[i].len()).max().unwrap())
+        .collect();
+    for row in table {
+        writeln!(
+            f,
+            "{:<width0$} {:>width1$} {:>width2$} {:>width3$}",
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            width0 = max_widths[0],
+            width1 = max_widths[1],
+            width2 = max_widths[2],
+            width3 = max_widths[3]
+        )?;
+    }
+    Ok(())
+}
+
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (name, streak) in self.streaks.iter() {
-            writeln!(
-                f,
-                "{}: {} (max {}) {}",
-                name,
-                streak.current_count,
-                streak.max_count,
-                streak.state.serialize()
-            )?;
+        if !self.streaks.is_empty() {
+            let table: Vec<_> = self
+                .streaks
+                .iter()
+                .map(|pair| {
+                    let (name, streak) = pair;
+                    [
+                        format!("{}:", name),
+                        format!("{}", streak.current_count),
+                        format!("(max {})", streak.max_count),
+                        streak.state.serialize().to_owned(),
+                    ]
+                })
+                .collect();
+            write_table(f, table)?;
         }
         Ok(())
     }
