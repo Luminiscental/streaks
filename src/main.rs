@@ -228,7 +228,7 @@ impl fmt::Display for State {
                 .map(|pair| {
                     let (name, streak) = pair;
                     [
-                        format!("{}:", name),
+                        format!("- {}:", name),
                         format!("{}", streak.current_count),
                         format!("(max {})", streak.max_count),
                         streak.state.serialize().to_owned(),
@@ -314,7 +314,7 @@ fn modify_state<F: FnOnce(&mut State)>(action: F) {
 }
 
 fn display_state() {
-    println!("{}", read_state());
+    print!("{}", read_state());
 }
 
 fn run_command(path: &str, command: &str, args: &[String]) {
