@@ -1,10 +1,19 @@
 use chrono::prelude::*;
-use std::{collections::HashMap, env, fmt};
+use std::{
+    collections::HashMap,
+    env, fmt,
+    fs::{self, File, OpenOptions},
+    io::{self, Read, Write},
+    path::PathBuf,
+};
+
+type ParseError = String;
 
 enum StreakState {
     Done,
     Pending,
     Expired,
+    New,
 }
 
 impl StreakState {
@@ -13,6 +22,17 @@ impl StreakState {
             StreakState::Done => "Done",
             StreakState::Pending => "Pending",
             StreakState::Expired => "Expired",
+            StreakState::New => "New",
+        }
+    }
+
+    fn deserialize(string: &str) -> Result<Self, ParseError> {
+        match string {
+            "Done" => Ok(StreakState::Done),
+            "Pending" => Ok(StreakState::Pending),
+            "Expired" => Ok(StreakState::Expired),
+            "New" => Ok(StreakState::New),
+            _ => Err(format!("unknown streak state: \"{}\"", string)),
         }
     }
 }
@@ -30,20 +50,26 @@ impl Streak {
             current_count: 0,
             max_count: 0,
             last_hit: Local::now(),
-            state: StreakState::Done,
+            state: StreakState::New,
         }
     }
 
-    fn hit(&mut self) {
+    /// Returns the new streak count if it updated
+    fn hit(&mut self) -> Option<u32> {
         match self.state {
-            StreakState::Done => eprintln!("streak already completed today"),
-            StreakState::Expired => {
+            StreakState::Done => {
+                eprintln!("streak already completed today");
+                None
+            }
+            StreakState::Expired | StreakState::New => {
                 self.state = StreakState::Done;
                 self.current_count = 1;
+                Some(self.current_count)
             }
             StreakState::Pending => {
                 self.state = StreakState::Done;
                 self.current_count += 1;
+                Some(self.current_count)
             }
         }
     }
@@ -57,6 +83,28 @@ impl Streak {
             self.state.serialize()
         )
     }
+
+    fn deserialize(values: &[&str]) -> Result<Self, ParseError> {
+        match values.len() {
+            4 => Ok(Self {
+                current_count: values[0].parse::<u32>().map_err(|err| {
+                    format!("expected unsigned integer for current_count: {}", err)
+                })?,
+                max_count: values[1]
+                    .parse::<u32>()
+                    .map_err(|err| format!("expected unsigned integer for max_count: {}", err))?,
+                last_hit: values[2]
+                    .parse::<DateTime<Local>>()
+                    .map_err(|err| format!("expected local datetime for last_hit: {}", err))?,
+                state: StreakState::deserialize(values[3])?,
+            }),
+            _ => Err(format!(
+                "expected 4 comma-separated values for a streak description, got {}: \"{}\"",
+                values.len(),
+                values.join(",")
+            )),
+        }
+    }
 }
 
 struct State {
@@ -69,9 +117,7 @@ impl State {
         for (_, streak) in self.streaks.iter_mut() {
             let days_between = now.num_days_from_ce() - streak.last_hit.num_days_from_ce();
             match days_between {
-                0 => {
-                    streak.state = StreakState::Done;
-                }
+                0 => (),
                 1 => {
                     streak.state = StreakState::Pending;
                 }
@@ -105,13 +151,15 @@ impl State {
         }
     }
 
-    fn hit_streak(&mut self, name: &str) {
+    /// Returns the new streak count if it updated
+    fn hit_streak(&mut self, name: &str) -> Option<u32> {
         match self.streaks.get_mut(name) {
             Some(streak) => streak.hit(),
             None => {
                 let mut streak = Streak::new();
-                streak.hit();
+                let result = streak.hit();
                 self.streaks.insert(name.to_owned(), streak);
+                result
             }
         }
     }
@@ -122,6 +170,31 @@ impl State {
             lines.push(format!("{},{}", name, streak.serialize()));
         }
         lines.join("\n")
+    }
+
+    fn deserialize(string: &str) -> Result<Self, ParseError> {
+        let mut streaks = HashMap::new();
+        for (line_number, line) in string.lines().enumerate() {
+            let values: Vec<_> = line.split(',').collect();
+            if values.len() < 2 {
+                return Err(format!(
+                    "expected name and state for streak on line {}: \"{}\"",
+                    line_number + 1,
+                    line
+                ));
+            }
+            streaks.insert(
+                values[0].to_owned(),
+                Streak::deserialize(&values[1..]).map_err(|err| {
+                    format!(
+                        "failed to parse streak on line {}: {}",
+                        line_number + 1,
+                        err
+                    )
+                })?,
+            );
+        }
+        Ok(Self { streaks })
     }
 }
 
@@ -153,12 +226,58 @@ fn print_usage(path: &str) {
     println!("    remove <streak name> - Stop tracking the streak with the given name.");
 }
 
+fn ensure_state_path() -> PathBuf {
+    let mut path = dirs::data_dir().expect("couldn't locate directory to store data");
+    path.push("streaks");
+    if let Err(err) = fs::create_dir_all(&path) {
+        panic!("couldn't create directory for storing state data: {}", err);
+    }
+    path.push("state.txt");
+    path
+}
+
+fn read_string(mut file: File) -> io::Result<String> {
+    let mut buffer = String::new();
+    file.read_to_string(&mut buffer)?;
+    Ok(buffer)
+}
+
 fn read_state() -> State {
-    // TODO
+    let path = ensure_state_path();
+    match OpenOptions::new()
+        .read(true)
+        // we need write(true) for create(true) to work
+        .write(true)
+        .truncate(false)
+        .create(true)
+        .open(&path)
+    {
+        Ok(file) => match read_string(file) {
+            Ok(string) => match State::deserialize(&string) {
+                Ok(state) => state,
+                Err(err) => panic!("couldn't parse state file: {}", err),
+            },
+            Err(err) => panic!("couldn't read state file: {}", err),
+        },
+        Err(err) => panic!("couldn't open state file: {}", err),
+    }
 }
 
 fn write_state(state: State) {
-    // TODO
+    let path = ensure_state_path();
+    match OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(&path)
+    {
+        Ok(mut file) => {
+            if let Err(err) = write!(file, "{}", state.serialize()) {
+                eprintln!("couldn't write state file: {}", err);
+            }
+        }
+        Err(err) => eprintln!("couldn't open state file: {}", err),
+    }
 }
 
 fn modify_state<F: FnOnce(&mut State)>(action: F) {
@@ -173,12 +292,21 @@ fn display_state() {
 
 fn run_command(path: &str, command: &str, args: &[String]) {
     match command {
-        "update" => modify_state(|state| state.update()),
+        "update" => {
+            modify_state(|state| state.update());
+            println!("updated streak states");
+        }
         "hit" => {
             if args.len() != 1 {
                 eprintln!("expected 1 argument");
             } else {
-                modify_state(|state| state.hit_streak(&args[0]));
+                let mut count = None;
+                modify_state(|state| {
+                    count = state.hit_streak(&args[0]);
+                });
+                if let Some(count) = count {
+                    println!("hit streak \"{}\": now at {}", &args[0], count);
+                }
             }
         }
         "add" => {
@@ -186,6 +314,7 @@ fn run_command(path: &str, command: &str, args: &[String]) {
                 eprintln!("expected 1 argument");
             } else {
                 modify_state(|state| state.add_streak(&args[0]));
+                println!("added streak \"{}\"", &args[0]);
             }
         }
         "remove" => {
@@ -193,6 +322,7 @@ fn run_command(path: &str, command: &str, args: &[String]) {
                 eprintln!("expected 1 argument");
             } else {
                 modify_state(|state| state.remove_streak(&args[0]));
+                println!("removed streak \"{}\"", &args[0]);
             }
         }
         "display" => display_state(),
