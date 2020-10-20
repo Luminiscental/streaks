@@ -69,11 +69,13 @@ impl Streak {
             }
             StreakState::Expired | StreakState::New => {
                 self.state = StreakState::Done;
+                self.last_hit = Local::now();
                 self.update_count(|_old_count| 1);
                 Some(self.current_count)
             }
             StreakState::Pending => {
                 self.state = StreakState::Done;
+                self.last_hit = Local::now();
                 self.update_count(|old_count| old_count + 1);
                 Some(self.current_count)
             }
