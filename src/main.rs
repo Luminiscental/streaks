@@ -1,4 +1,5 @@
 use chrono::prelude::*;
+use itertools::Itertools;
 use std::{
     collections::HashMap,
     env, fmt,
@@ -171,7 +172,11 @@ impl State {
 
     fn serialize(&self) -> String {
         let mut lines = Vec::new();
-        for (name, streak) in self.streaks.iter() {
+        for (name, streak) in self
+            .streaks
+            .iter()
+            .sorted_by_key(|pair| pair.0)
+        {
             lines.push(format!("{},{}", name, streak.serialize()));
         }
         lines.join("\n")
@@ -230,6 +235,7 @@ impl fmt::Display for State {
             let table: Vec<_> = self
                 .streaks
                 .iter()
+                .sorted_by_key(|pair| pair.0)
                 .map(|pair| {
                     let (name, streak) = pair;
                     [
