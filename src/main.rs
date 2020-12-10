@@ -159,6 +159,14 @@ impl State {
         }
     }
 
+    fn rename_streak(&mut self, name: &str, new_name: &str) {
+        if let Some(streak) = self.streaks.remove(name) {
+            self.streaks.insert(new_name.to_owned(), streak);
+        } else {
+            eprintln!("streak \"{}\" doesn't exist", name);
+        }
+    }
+
     /// Returns the new streak count if it updated
     fn hit_streak(&mut self, name: &str) -> Option<u32> {
         match self.streaks.get_mut(name) {
@@ -174,11 +182,7 @@ impl State {
 
     fn serialize(&self) -> String {
         let mut lines = Vec::new();
-        for (name, streak) in self
-            .streaks
-            .iter()
-            .sorted_by_key(|pair| pair.0)
-        {
+        for (name, streak) in self.streaks.iter().sorted_by_key(|pair| pair.0) {
             lines.push(format!("{},{}", name, streak.serialize()));
         }
         lines.join("\n")
@@ -264,6 +268,7 @@ fn print_usage(path: &str) {
     println!("    hit <streak name> - Hit a streak with the given name.");
     println!("    add <streak name> - Start tracking a new streak with the given name.");
     println!("    remove <streak name> - Stop tracking the streak with the given name.");
+    println!("    rename <streak name> <new name> - Change the name of an existing streak.");
 }
 
 fn ensure_state_path() -> PathBuf {
@@ -363,6 +368,14 @@ fn run_command(path: &str, command: &str, args: &[String]) {
             } else {
                 modify_state(|state| state.remove_streak(&args[0]));
                 println!("removed streak \"{}\"", &args[0]);
+            }
+        }
+        "rename" => {
+            if args.len() != 2 {
+                eprintln!("expected 2 arguments");
+            } else {
+                modify_state(|state| state.rename_streak(&args[0], &args[1]));
+                println!("renamed streak \"{}\" to \"{}\"", &args[0], &args[1]);
             }
         }
         "display" => display_state(),
