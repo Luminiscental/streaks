@@ -142,20 +142,20 @@ impl State {
         }
     }
 
-    fn add_streak(&mut self, name: &str) {
+    fn add_streaks(&mut self, names: &[String]) {
         // TODO: guard this more
-        if self
-            .streaks
-            .insert(name.to_owned(), Streak::new())
-            .is_some()
-        {
-            eprintln!("warning: reset old version of that streak");
+        for name in names.iter() {
+            if self.streaks.insert(name.clone(), Streak::new()).is_some() {
+                eprintln!("warning: reset old version of streak \"{}\"", name);
+            }
         }
     }
 
-    fn remove_streak(&mut self, name: &str) {
-        if self.streaks.remove(name).is_none() {
-            eprintln!("no streak called \"{}\" exists", name);
+    fn remove_streaks(&mut self, names: &[String]) {
+        for name in names.iter() {
+            if self.streaks.remove(name).is_none() {
+                eprintln!("no streak called \"{}\" exists", name);
+            }
         }
     }
 
@@ -342,32 +342,38 @@ fn run_command(path: &str, command: &str, args: &[String]) {
             println!("updated streak states");
         }
         "hit" => {
-            if args.len() != 1 {
-                eprintln!("expected 1 argument");
+            if args.is_empty() {
+                eprintln!("expected an argument");
             } else {
                 let mut count = None;
-                modify_state(|state| {
-                    count = state.hit_streak(&args[0]);
-                });
-                if let Some(count) = count {
-                    println!("hit streak \"{}\": now at {}", &args[0], count);
+                for arg in args.iter() {
+                    modify_state(|state| {
+                        count = state.hit_streak(arg);
+                    });
+                    if let Some(count) = count {
+                        println!("hit streak \"{}\": now at {}", arg, count);
+                    }
                 }
             }
         }
         "add" => {
-            if args.len() != 1 {
-                eprintln!("expected 1 argument");
+            if args.is_empty() {
+                eprintln!("expected an argument");
             } else {
-                modify_state(|state| state.add_streak(&args[0]));
-                println!("added streak \"{}\"", &args[0]);
+                modify_state(|state| state.add_streaks(&args));
+                for arg in args.iter() {
+                    println!("added streak \"{}\"", arg);
+                }
             }
         }
         "remove" => {
-            if args.len() != 1 {
-                eprintln!("expected 1 argument");
+            if args.is_empty() {
+                eprintln!("expected an argument");
             } else {
-                modify_state(|state| state.remove_streak(&args[0]));
-                println!("removed streak \"{}\"", &args[0]);
+                modify_state(|state| state.remove_streaks(&args));
+                for arg in args.iter() {
+                    println!("removed streak \"{}\"", arg);
+                }
             }
         }
         "rename" => {
