@@ -8,6 +8,25 @@ use std::{
     path::PathBuf,
 };
 
+/// Levenshtein distance
+fn lev(a: &str, b: &str) -> usize {
+    if b.is_empty() {
+        a.len()
+    } else if a.is_empty() {
+        b.len()
+    } else if a.chars().next() == b.chars().next() {
+        lev(&a[1..], &b[1..])
+    } else {
+        1 + lev(&a[1..], b)
+            .min(lev(a, &b[1..]))
+            .min(lev(&a[1..], &b[1..]))
+    }
+}
+
+fn close_match(a: &str, b: &str) -> bool {
+    lev(a, b) <= 1
+}
+
 type ParseError = String;
 
 enum StreakState {
@@ -120,6 +139,15 @@ struct State {
 }
 
 impl State {
+    fn not_found(&mut self, name: &str) {
+        eprint!("streak \"{}\" not found", name);
+        if let Some(alt_name) = self.streaks.keys().find(|n| close_match(n, name)) {
+            eprintln!(", maybe you meant \"{}\"?", alt_name);
+        } else {
+            eprintln!();
+        }
+    }
+
     fn update(&mut self) {
         let now = Local::now();
         for (_, streak) in self.streaks.iter_mut() {
@@ -154,7 +182,7 @@ impl State {
     fn remove_streaks(&mut self, names: &[String]) {
         for name in names.iter() {
             if self.streaks.remove(name).is_none() {
-                eprintln!("no streak called \"{}\" exists", name);
+                self.not_found(name);
             }
         }
     }
@@ -163,20 +191,23 @@ impl State {
         if let Some(streak) = self.streaks.remove(name) {
             self.streaks.insert(new_name.to_owned(), streak);
         } else {
-            eprintln!("streak \"{}\" doesn't exist", name);
+            self.not_found(name);
         }
     }
 
     /// Returns the new streak count if it updated
     fn hit_streak(&mut self, name: &str) -> Option<u32> {
-        match self.streaks.get_mut(name) {
-            Some(streak) => streak.hit(),
-            None => {
-                let mut streak = Streak::new();
-                let result = streak.hit();
-                self.streaks.insert(name.to_owned(), streak);
-                result
+        if let Some(streak) = self.streaks.get_mut(name) {
+            streak.hit()
+        } else {
+            eprintln!("creating new streak \"{}\"", name);
+            if let Some(alt_name) = self.streaks.keys().find(|n| close_match(n, name)) {
+                eprintln!("warning: you might have meant \"{}\"", alt_name);
             }
+            let mut streak = Streak::new();
+            let result = streak.hit();
+            self.streaks.insert(name.to_owned(), streak);
+            result
         }
     }
 
