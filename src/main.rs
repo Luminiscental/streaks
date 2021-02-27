@@ -24,7 +24,7 @@ fn lev(a: &str, b: &str) -> usize {
 }
 
 fn close_match(a: &str, b: &str) -> bool {
-    lev(a, b) <= 1
+    lev(a, b) <= usize::min(usize::min(a.len(), b.len()) / 2, 3)
 }
 
 type ParseError = String;
