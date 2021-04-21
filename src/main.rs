@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     env, fmt,
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, BufRead, Read, Write},
     path::PathBuf,
 };
 
@@ -25,6 +25,25 @@ fn lev(a: &str, b: &str) -> usize {
 
 fn close_match(a: &str, b: &str) -> bool {
     lev(a, b) <= usize::min(usize::min(a.len(), b.len()) / 2, 3)
+}
+
+/// Prompt for a yes/no answer
+fn yes_or_no(prompt: &str) -> bool {
+    loop {
+        print!("{} [y/n] :", prompt);
+        io::stdout().flush().unwrap();
+        let stdin = io::stdin();
+        let answer = stdin.lock().lines().next().unwrap().unwrap();
+        if answer.starts_with(|c: char| c.to_ascii_lowercase() == 'y') {
+            println!();
+            return true;
+        } else if answer.starts_with(|c: char| c.to_ascii_lowercase() == 'n') {
+            println!();
+            return false;
+        } else {
+            continue;
+        }
+    }
 }
 
 type ParseError = String;
@@ -80,9 +99,12 @@ impl Streak {
     }
 
     /// Returns the new streak count if it updated
-    fn hit(&mut self) -> Option<u32> {
+    fn hit(&mut self, disambiguator: Option<String>) -> Option<u32> {
         match self.state {
             StreakState::Done => {
+                if let Some(s) = disambiguator {
+                    eprint!("{}", s);
+                }
                 eprintln!("streak already completed today");
                 None
             }
@@ -196,19 +218,23 @@ impl State {
     }
 
     /// Returns the new streak count if it updated
-    fn hit_streak(&mut self, name: &str) -> Option<u32> {
+    fn hit_streak(&mut self, name: &str, one_of_many: bool) -> Option<u32> {
+        let disambiguator = one_of_many.then(|| format!("\"{}\": ", name));
         if let Some(streak) = self.streaks.get_mut(name) {
-            streak.hit()
-        } else {
-            eprintln!("creating new streak \"{}\"", name);
-            if let Some(alt_name) = self.streaks.keys().find(|n| close_match(n, name)) {
-                eprintln!("warning: you might have meant \"{}\"", alt_name);
-            }
-            let mut streak = Streak::new();
-            let result = streak.hit();
-            self.streaks.insert(name.to_owned(), streak);
-            result
+            return streak.hit(disambiguator);
         }
+        if let Some(alt_name) = self.streaks.keys().find(|n| close_match(n, name)) {
+            eprintln!("streak with a similar name exists: \"{}\"", alt_name);
+            if yes_or_no("hit this streak?") {
+                let alt_name = alt_name.clone();
+                return self.streaks.get_mut(&alt_name).unwrap().hit(disambiguator);
+            }
+        }
+        eprintln!("creating new streak \"{}\"", name);
+        self.streaks
+            .entry(name.to_owned())
+            .or_insert_with(Streak::new)
+            .hit(disambiguator)
     }
 
     fn serialize(&self) -> String {
@@ -379,7 +405,7 @@ fn run_command(path: &str, command: &str, args: &[String]) {
                 let mut count = None;
                 for arg in args.iter() {
                     modify_state(|state| {
-                        count = state.hit_streak(arg);
+                        count = state.hit_streak(arg, true);
                     });
                     if let Some(count) = count {
                         println!("hit streak \"{}\": now at {}", arg, count);
