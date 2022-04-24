@@ -219,28 +219,29 @@ impl State {
 
     /// Returns the name of the updated streak and the new count
     fn hit_streak(&mut self, name: &str, one_of_many: bool) -> Option<(String, u32)> {
-        let disambiguator = one_of_many.then(|| format!("\"{}\": ", name));
+        let disambiguator = one_of_many.then(|| format!("\"{name}\": "));
         if let Some(streak) = self.streaks.get_mut(name) {
             return streak.hit(disambiguator).map(|n| (name.to_owned(), n));
         }
-        if let Some(alt_name) = self.streaks.keys().find(|n| close_match(n, name)) {
-            eprintln!("streak with a similar name exists: \"{}\"", alt_name);
-            if yes_or_no("hit this streak?") {
-                let alt_name = alt_name.clone();
-                return self
-                    .streaks
-                    .get_mut(&alt_name)
-                    .unwrap()
-                    .hit(disambiguator)
-                    .map(|n| (alt_name, n));
+        if let Some((name, streak)) = self.streaks.iter_mut().find(|kv| close_match(kv.0, name)) {
+            if yes_or_no(&format!("hit \"{name}\"?")) {
+                return streak.hit(disambiguator).map(|n| (name.to_owned(), n));
             }
         }
-        eprintln!("creating new streak \"{}\"", name);
-        self.streaks
-            .entry(name.to_owned())
-            .or_insert_with(Streak::new)
-            .hit(disambiguator)
-            .map(|n| (name.to_owned(), n))
+        if let Some((name, streak)) = self.streaks.iter_mut().find(|s| s.0.starts_with(name)) {
+            if yes_or_no(&format!("hit \"{name}\"?")) {
+                return streak.hit(disambiguator).map(|n| (name.to_owned(), n));
+            }
+        }
+        yes_or_no("create new streak \"{name}\"?")
+            .then(|| {
+                self.streaks
+                    .entry(name.to_owned())
+                    .or_insert_with(Streak::new)
+                    .hit(disambiguator)
+                    .map(|n| (name.to_owned(), n))
+            })
+            .flatten()
     }
 
     fn serialize(&self) -> String {
@@ -423,7 +424,7 @@ fn run_command(path: &str, command: &str, args: &[String]) {
             if args.is_empty() {
                 eprintln!("expected an argument");
             } else {
-                modify_state(|state| state.add_streaks(&args));
+                modify_state(|state| state.add_streaks(args));
                 for arg in args.iter() {
                     println!("added streak \"{}\"", arg);
                 }
@@ -433,7 +434,7 @@ fn run_command(path: &str, command: &str, args: &[String]) {
             if args.is_empty() {
                 eprintln!("expected an argument");
             } else {
-                modify_state(|state| state.remove_streaks(&args));
+                modify_state(|state| state.remove_streaks(args));
                 for arg in args.iter() {
                     println!("removed streak \"{}\"", arg);
                 }
