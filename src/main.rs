@@ -233,7 +233,7 @@ impl State {
                 return streak.hit(disambiguator).map(|n| (name.to_owned(), n));
             }
         }
-        yes_or_no("create new streak \"{name}\"?")
+        yes_or_no(&format!("create new streak \"{name}\"?"))
             .then(|| {
                 self.streaks
                     .entry(name.to_owned())
